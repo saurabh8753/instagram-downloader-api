@@ -3,55 +3,65 @@ const fetch = require("node-fetch");
 const app = express();
 
 app.get("/", (req, res) => {
-  res.send("Instagram Downloader API Running");
+  res.send("Instagram API Running ✔️");
 });
 
 app.get("/api", async (req, res) => {
-  const url = req.query.url;
-  if (!url) {
-    return res.json({ ok: false, error: "No URL provided" });
-  }
-
-  console.log("User Requested URL:", url);
-
   try {
-    const response = await fetch(url, {
+    const ig = req.query.url;
+    if (!ig) return res.json({ ok: false, error: "No URL provided" });
+
+    console.log("User Requested:", ig);
+
+    const html = await fetch(ig, {
       headers: {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
         "Accept": "text/html",
         "Accept-Language": "en-US,en;q=0.9",
-        "Referer": "https://www.instagram.com/"
+        "Referer": "https://www.instagram.com"
       }
-    });
+    }).then(r => r.text());
 
-    const html = await response.text();
     console.log("HTML Length:", html.length);
 
-    // ========== FALLBACK 1 | playbackUrl ==========
-    let match =
-      html.match(/"playbackUrl":"(.*?)"/) ||
-      html.match(/"video_versions":\[\{"url":"(.*?)"/);
+    // 1) Extract window.__additionalDataLoaded JSON
+    let jsonMatch = html.match(
+      /window\.__additionalDataLoaded\((.*?)\);/
+    );
 
-    // ========== FALLBACK 2 | fallback_url ==========
-    if (!match) match = html.match(/"fallback_url":"(.*?)"/);
+    if (jsonMatch) {
+      let raw = jsonMatch[1]
+        .split(",")        // ["\"/reel/...\"", "{...json...}"]
+        .slice(1)          // keep only json
+        .join(",")         
+        .trim();
 
-    // ========== FALLBACK 3 | src":" ==========
-    if (!match) match = html.match(/"src":"(.*?\.mp4)"/);
+      if (raw.endsWith(")")) raw = raw.slice(0, -1);
 
-    if (match) {
-      const video_url = match[1].replace(/\\u0026/g, "&");
-      console.log("Extracted:", video_url);
-      return res.json({ ok: true, url: video_url });
+      let json = JSON.parse(raw);
+      let video = json?.graphql?.shortcode_media?.video_url;
+
+      if (video) {
+        console.log("Extracted video:", video);
+        return res.json({ ok: true, url: video });
+      }
     }
 
-    console.log("❌ All Regex Failed");
-    return res.json({ ok: false, error: "Cannot extract. IG format changed." });
+    // 2) OLD fallback
+    const fallback = html.match(/"video_url":"(.*?)"/);
+    if (fallback) {
+      const url = fallback[1].replace(/\\u0026/g, "&");
+      return res.json({ ok: true, url });
+    }
+
+    console.log("❌ Failed all extract methods.");
+    return res.json({ ok: false, error: "Failed to extract video." });
 
   } catch (err) {
-    console.log("EXCEPTION ERROR:", err.message);
+    console.log("ERROR:", err.message);
     return res.json({ ok: false, error: err.message });
   }
 });
 
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log("Server running on port", PORT));
+app.listen(PORT, () => console.log("Server running on", PORT));
