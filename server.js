@@ -24,28 +24,28 @@ app.get("/api", async (req, res) => {
       }
     });
 
-    console.log("Fetch Status:", response.status);
-
-    if (!response.ok) {
-      console.log("Instagram Fetch Failed:", response.statusText);
-      return res.json({ ok: false, error: "Instagram blocked response" });
-    }
-
     const html = await response.text();
     console.log("HTML Length:", html.length);
 
-    // try extracting video URL
-    const regex = /"video_url":"(.*?)"/;
-    const match = html.match(regex);
+    // ========== FALLBACK 1 | playbackUrl ==========
+    let match =
+      html.match(/"playbackUrl":"(.*?)"/) ||
+      html.match(/"video_versions":\[\{"url":"(.*?)"/);
+
+    // ========== FALLBACK 2 | fallback_url ==========
+    if (!match) match = html.match(/"fallback_url":"(.*?)"/);
+
+    // ========== FALLBACK 3 | src":" ==========
+    if (!match) match = html.match(/"src":"(.*?\.mp4)"/);
 
     if (match) {
       const video_url = match[1].replace(/\\u0026/g, "&");
-      console.log("Extracted Video URL:", video_url);
+      console.log("Extracted:", video_url);
       return res.json({ ok: true, url: video_url });
     }
 
-    console.log("Regex failed: Could not extract");
-    return res.json({ ok: false, error: "Failed to extract video" });
+    console.log("❌ All Regex Failed");
+    return res.json({ ok: false, error: "Cannot extract. IG format changed." });
 
   } catch (err) {
     console.log("EXCEPTION ERROR:", err.message);
